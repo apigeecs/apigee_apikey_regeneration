@@ -1,0 +1,105 @@
+<?php
+
+/**
+ * Implements hook_menu
+ *
+ * Provide a callback for regenerating keys
+ *
+ * @return array
+ */
+function apigee_apikey_regeneration_menu()
+{
+    $items = [];
+    $items['user/%user/apps/%/regenerate_key'] = [
+        'page callback' => 'drupal_get_form',
+        'page arguments' => ['apigee_apikey_regeneration_confirm_form', 1, 3],
+        'title' => 'Regenerate keys',
+        'access callback' => 'devconnect_developer_apps_access',
+        'access arguments' => [1, 'edit', 3],
+        'type' => MENU_CALLBACK,
+        'weight' => 0,
+    ];
+
+    return $items;
+}
+
+/**
+ * Confirmation form for regenerate Key button
+ *
+ * @param $form
+ * @param $form_state
+ * @param $user
+ * @param $app_id
+ * @return mixed
+ */
+function apigee_apikey_regeneration_confirm_form($form, $form_state, $user, $app_id) {
+    $apps = entity_load("developer_app", [$app_id], ['mail' => $user->mail]);
+    $app = array_pop($apps);
+    $form['#app_to_regenerate'] = $app;
+    $form['#user_requesting_regenerate'] = $user;
+    return confirm_form($form, t("Are you sure you want to regenerate keys for %title", ['%title' => $app->attributes['DisplayName']]), "user/". $user->uid ."/apps");
+
+}
+
+/**
+ * Regenerate key logic
+ * @param $form
+ * @param $form_state
+ */
+function apigee_apikey_regeneration_confirm_form_submit($form, &$form_state){
+    $app = $form['#app_to_regenerate'];
+
+    $chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $chars_len = strlen($chars);
+
+    //Generate the random key
+    $length = 32;
+    $string = '';
+
+    for ($i = 0; $i < $length; $i++) {
+        $string .= $chars[rand(0, $chars_len-1)];
+    }
+    $consumerKey = $string;
+
+    //Generate random Secret
+    $length = 16;
+    $string = '';
+    for ($i = 0; $i < $length; $i++) {
+        $string .= $chars[rand(0, $chars_len-1)];
+    }
+    $consumerSecret = $string;
+
+    $_app_obj = new \Apigee\ManagementAPI\DeveloperApp(devconnect_default_org_config(), $app->developer);
+    $_app_obj = $_app_obj->loadByAppId($app->appId); //Load the Developer App
+    $old_key = $_app_obj->getConsumerKey(); //Save the old consumer key
+    $_app_obj->createKey($consumerKey, $consumerSecret); //Add the new Key and Secret
+    $_app_obj->deleteKey($old_key); //Delete the old key
+
+    drupal_set_message("API Keys regenerated for " . $app->attributes['DisplayName']);
+    $form_state['redirect'] = "user/" . $form['#user_requesting_regenerate']->uid . "/apps";
+}
+
+/**
+ * Add the new template in for adding the button and the logic
+ * @param $vars
+ */
+function apigee_apikey_regeneration_preprocess_devconnect_developer_apps_list(&$vars){
+    drupal_add_js(drupal_get_path("module", "apigee_apikey_regeneration") ."/js/apigee_apikey_regeneration.js");
+    $vars['theme_hook_suggestions'][] = 'devconnect_developer_apps_list__apigee_apikey_regeneration';
+    foreach($vars['applications'] as &$app){
+        $app['regenerate_url'] = "user/" . $vars['user']->uid . "/apps/" . $app['entity']->appId ."/regenerate_key";
+    }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function apigee_apikey_regeneration_theme($existing, $type, $theme, $path) {
+    $theme = array();
+    $theme['devconnect_developer_apps_list__apigee_apikey_regeneration'] = array(
+        'base hook' => 'devconnect_developer_apps_list',
+        'template' => 'devconnect_developer_apps_list--apigee_apikey_regeneration',
+        'path' => drupal_get_path('module', 'apigee_apikey_regeneration') . '/templates',
+    );
+    return $theme;
+}

@@ -1,0 +1,5 @@
+name = Apigee API Key Regeneration
+description = Add regenerate API Keys link to My Apps listing page.
+core = 7.x
+package = Apigee
+dependencies[] = devconnect_developer_apps
